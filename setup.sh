@@ -22,38 +22,104 @@ error_handler() {
 }
 trap 'error_handler ${LINENO}' ERR
 
+# Check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Check if package is installed
+package_installed() {
+    dpkg -l "$1" | grep -q '^ii'
+}
+
 # 1. Update the machine
-print_message "Updating system packages"
-sudo apt-get update
-sudo apt-get upgrade -y
+print_message "Checking system packages"
+if [ -z "$(find /var/lib/apt/lists -maxdepth 1 -mtime -1)" ]; then
+    print_instruction "System packages need updating..."
+    sudo apt-get update
+    sudo apt-get upgrade -y
+else
+    print_instruction "System packages are up to date"
+fi
 
 # 2. Install required dependencies
-print_message "Installing required dependencies"
+print_message "Checking required dependencies"
 
-# Install Git
-sudo apt-get install -y git
+# Check and install Git
+if ! command_exists git; then
+    print_instruction "Installing Git..."
+    sudo apt-get install -y git
+else
+    print_instruction "Git is already installed ($(git --version))"
+fi
 
-# Install Docker
-print_message "Installing Docker"
-sudo apt-get install -y ca-certificates curl gnupg
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-echo \
-  "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# Check and install Docker
+if ! command_exists docker; then
+    print_message "Installing Docker..."
+    if ! package_installed docker-ce; then
+        sudo apt-get install -y ca-certificates curl gnupg
+        sudo install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        sudo chmod a+r /etc/apt/keyrings/docker.gpg
+        echo \
+          "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+          "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo apt-get update
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    fi
 
-# Add current user to docker group
-sudo usermod -aG docker $USER
-print_instruction "Please note: Docker permission changes will take effect after you log out and back in"
+    # Check if user is in docker group
+    if ! groups "$USER" | grep -q '\bdocker\b'; then
+        print_instruction "Adding user to docker group..."
+        sudo usermod -aG docker "$USER"
+        print_instruction "Please note: Docker permission changes will take effect after you log out and back in"
+    fi
+else
+    print_instruction "Docker is already installed ($(docker --version))"
+    if groups "$USER" | grep -q '\bdocker\b'; then
+        print_instruction "User is already in docker group"
+    else
+        print_instruction "Adding user to docker group..."
+        sudo usermod -aG docker "$USER"
+        print_instruction "Please note: Docker permission changes will take effect after you log out and back in"
+    fi
+fi
 
-# Install Node.js and npm
-print_message "Installing Node.js and npm"
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs
+# Check and install Node.js and npm
+print_message "Checking Node.js installation"
+REQUIRED_NODE_VERSION="22"
+
+install_nodejs() {
+    print_instruction "Installing Node.js ${REQUIRED_NODE_VERSION}.x..."
+    # Remove existing Node.js installations
+    sudo apt-get remove -y nodejs nodejs-doc libnode-dev libnode72 || true
+    sudo apt-get autoremove -y
+    sudo rm -rf /usr/local/bin/npm /usr/local/share/man/man1/node* /usr/local/lib/dtrace/node.d ~/.npm 2>/dev/null || true
+    sudo rm -rf /usr/local/lib/node* /opt/local/bin/node /opt/local/include/node /opt/local/lib/node* 2>/dev/null || true
+    sudo rm -rf /usr/local/include/node* /usr/local/bin/node* 2>/dev/null || true
+
+    # Clean apt cache
+    sudo rm -rf /var/lib/apt/lists/*
+    sudo apt-get clean
+    sudo apt-get update
+
+    # Install Node.js
+    curl -fsSL https://deb.nodesource.com/setup_${REQUIRED_NODE_VERSION}.x | sudo -E bash -
+    sudo apt-get install -y nodejs --fix-broken
+}
+
+if command_exists node; then
+    CURRENT_NODE_VERSION=$(node -v | cut -d. -f1 | tr -d 'v')
+    if [ "$CURRENT_NODE_VERSION" -eq "$REQUIRED_NODE_VERSION" ]; then
+        print_instruction "Node.js ${REQUIRED_NODE_VERSION}.x is already installed ($(node --version))"
+    else
+        print_instruction "Updating Node.js to version ${REQUIRED_NODE_VERSION}.x..."
+        install_nodejs
+    fi
+else
+    install_nodejs
+fi
 
 # Verify installations
 print_message "Verifying installations"
@@ -62,7 +128,7 @@ docker --version
 node --version
 npm --version
 
-# Ask if repository is private
+# Check for existing SSH key
 print_message "Repository Access"
 while true; do
     read -p "Is this a private repository? (Y/n) " is_private
@@ -74,29 +140,30 @@ while true; do
 done
 
 if [[ "$is_private" =~ ^[Yy]$ ]]; then
-    # Setup for private repository
-    print_message "Setting up GitHub SSH key"
+    print_message "Checking SSH configuration"
     if [ ! -f ~/.ssh/id_rsa ]; then
+        print_instruction "No SSH key found. Creating new SSH key..."
         ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+        print_message "GitHub SSH Key Setup"
+        echo "Here's your public SSH key:"
+        echo "----------------------------------------------------------------"
+        cat ~/.ssh/id_rsa.pub
+        echo "----------------------------------------------------------------"
+        print_instruction "1. Copy the above public key"
+        print_instruction "2. Go to GitHub -> Settings -> SSH and GPG keys -> New SSH key"
+        print_instruction "3. Paste the key and save"
+
+        while true; do
+            read -p "Have you added the SSH key to GitHub? (Y/n) " response
+            if [[ "$response" =~ ^[Yy]$ ]]; then
+                break
+            else
+                print_instruction "Please add the SSH key to GitHub before continuing"
+            fi
+        done
+    else
+        print_instruction "Existing SSH key found"
     fi
-
-    print_message "GitHub SSH Key Setup"
-    echo "Here's your public SSH key:"
-    echo "----------------------------------------------------------------"
-    cat ~/.ssh/id_rsa.pub
-    echo "----------------------------------------------------------------"
-    print_instruction "1. Copy the above public key"
-    print_instruction "2. Go to GitHub -> Settings -> SSH and GPG keys -> New SSH key"
-    print_instruction "3. Paste the key and save"
-
-    while true; do
-        read -p "Have you added the SSH key to GitHub? (Y/n) " response
-        if [[ "$response" =~ ^[Yy]$ ]]; then
-            break
-        else
-            print_instruction "Please add the SSH key to GitHub before continuing"
-        fi
-    done
 
     print_message "Testing GitHub connection"
     ssh -T git@github.com -o StrictHostKeyChecking=no || true
@@ -104,17 +171,24 @@ if [[ "$is_private" =~ ^[Yy]$ ]]; then
     print_message "Repository setup"
     read -p "Enter the GitHub repository SSH URL (git@github.com:username/repo.git): " repo_url
 else
-    # Setup for public repository
     print_message "Repository setup"
     read -p "Enter the GitHub repository HTTPS URL (https://github.com/username/repo.git): " repo_url
 fi
 
-# Clone the repository
-print_message "Cloning repository"
-git clone "$repo_url"
-
-# Get the repository name from the URL (works for both HTTPS and SSH URLs)
+# Check if repository already exists
 repo_name=$(basename "$repo_url" .git)
+if [ -d "$repo_name" ]; then
+    print_instruction "Repository $repo_name already exists locally"
+    read -p "Do you want to remove it and clone again? (Y/n) " reclone
+    if [[ "$reclone" =~ ^[Yy]$ ]]; then
+        rm -rf "$repo_name"
+        print_message "Cloning repository"
+        git clone "$repo_url"
+    fi
+else
+    print_message "Cloning repository"
+    git clone "$repo_url"
+fi
 
 # Final instructions
 print_message "Setup completed successfully!"
