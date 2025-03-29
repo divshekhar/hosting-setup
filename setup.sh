@@ -175,10 +175,30 @@ else
     read -p "Enter the GitHub repository HTTPS URL (https://github.com/username/repo.git): " repo_url
 fi
 
+# Get clone directory
+print_message "Clone Directory Setup"
+current_dir=$(pwd)
+print_instruction "Current directory: $current_dir"
+read -p "Where would you like to clone the repository? (Press Enter for current directory or provide path): " clone_dir
+
+# Handle empty input (use current directory) or expand ~ if present
+clone_dir="${clone_dir:-$current_dir}"
+clone_dir="${clone_dir/#\~/$HOME}"
+
+# Create directory if it doesn't exist
+if [ ! -d "$clone_dir" ]; then
+    print_instruction "Creating directory: $clone_dir"
+    mkdir -p "$clone_dir"
+fi
+
+# Change to the specified directory
+cd "$clone_dir"
+print_instruction "Using directory: $(pwd)"
+
 # Check if repository already exists
 repo_name=$(basename "$repo_url" .git)
 if [ -d "$repo_name" ]; then
-    print_instruction "Repository $repo_name already exists locally"
+    print_instruction "Repository $repo_name already exists in $(pwd)/$repo_name"
     read -p "Do you want to remove it and clone again? (Y/n) " reclone
     if [[ "$reclone" =~ ^[Yy]$ ]]; then
         rm -rf "$repo_name"
@@ -194,7 +214,7 @@ fi
 print_message "Setup completed successfully!"
 echo
 print_instruction "Next steps:"
-print_instruction "1. cd into your repository: cd $repo_name"
+print_instruction "1. cd into your repository: cd $(pwd)/$repo_name"
 print_instruction "2. Create/edit your .env file"
 print_instruction "3. Run ./update.sh to build and start the project"
 echo
