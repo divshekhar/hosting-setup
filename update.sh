@@ -22,6 +22,29 @@ error_handler() {
 }
 trap 'error_handler ${LINENO}' ERR
 
+# Check Docker permissions
+check_docker_permissions() {
+    if ! docker info > /dev/null 2>&1; then
+        print_warning "Docker permission denied. Attempting to fix..."
+        
+        # Check if user is in docker group
+        if ! groups "$USER" | grep -q '\bdocker\b'; then
+            print_message "Adding user to docker group..."
+            sudo usermod -aG docker "$USER"
+            print_warning "Please log out and log back in for the changes to take effect"
+            print_warning "Then run this script again"
+            exit 1
+        fi
+
+        # Try running with sudo if adding to group didn't help
+        if ! sudo docker info > /dev/null 2>&1; then
+            print_warning "Failed to fix Docker permissions"
+            print_warning "Please ensure Docker is installed and running"
+            exit 1
+        fi
+    fi
+}
+
 # Ask for repository directory
 print_message "Repository Setup"
 read -p "Enter the path to your repository (default: current directory): " repo_path
@@ -41,6 +64,9 @@ if [ ! -d ".git" ]; then
     print_warning "Not a git repository: $repo_path"
     exit 1
 fi
+
+# Check Docker permissions before proceeding
+check_docker_permissions
 
 # 1. Update the machine
 print_message "Updating system packages"
