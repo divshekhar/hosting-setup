@@ -53,8 +53,21 @@ git pull origin main
 # 3. Check and update submodules
 if [ -f ".gitmodules" ]; then
     print_message "Updating submodules"
-    git submodule update --init --recursive
-    git submodule update --remote --merge
+    
+    # Initialize submodules if not already initialized
+    git submodule init || true
+    
+    # Fetch updates for all submodules
+    git fetch --recurse-submodules || true
+    
+    # Update all submodules
+    git submodule update --init --recursive --force || {
+        print_warning "Some submodules might be out of sync, attempting alternative update"
+        git submodule foreach git checkout master || true
+        git submodule foreach git pull origin master || true
+    }
+    
+    print_message "Submodule update completed"
 fi
 
 # 4. Check .env file
