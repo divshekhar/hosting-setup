@@ -1,8 +1,15 @@
 #!/bin/bash
 
 source "$(dirname "${BASH_SOURCE[0]}")/../core/colors.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../core/dependencies.sh"
 
-install_git() {
+function install_git {
+    # First ensure all dependencies are met
+    if ! ensure_dependencies "git"; then
+        print_error "Failed to install dependencies for Git"
+        return 1
+    fi
+
     if ! command -v git >/dev/null 2>&1; then
         print_instruction "Installing Git..."
         sudo apt-get update

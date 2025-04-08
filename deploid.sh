@@ -1,10 +1,18 @@
 #!/bin/bash
 
+# Check if running as root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script must be run as root or with sudo"
+    echo "Please run: sudo $0"
+    exit 1
+fi
+
 # Source core modules
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/core/colors.sh"
 source "$SCRIPT_DIR/core/utils.sh"
 source "$SCRIPT_DIR/core/menu.sh"
+source "$SCRIPT_DIR/install/git.sh"
 
 # Initialize breadcrumb with "Deploid"
 MENU_BREADCRUMB="Deploid"
@@ -40,9 +48,8 @@ handle_install_menu() {
         1)  # Git
             update_breadcrumb "Git"
             show_menu "Installing Git" "Continue"
-            source "$SCRIPT_DIR/install/git.sh"
             install_git
-            git_version=$(git --version)
+            git_version=$(git --version 2>/dev/null || echo "unknown")
             print_message "Yayy! Git is installed! ($git_version)"
             echo
             print_instruction "Next steps:"
@@ -57,7 +64,7 @@ handle_install_menu() {
             show_menu "Installing Docker" "Continue"
             source "$SCRIPT_DIR/install/docker.sh"
             install_docker
-            docker_version=$(docker --version)
+            docker_version=$(docker --version 2>/dev/null || echo "unknown")
             print_message "Yayy! Docker is installed! ($docker_version)"
             echo
             print_instruction "Next steps:"
@@ -125,23 +132,26 @@ handle_update_menu() {
     remove_last_breadcrumb
 }
 
-# Main menu (single execution)
-show_menu "What do you want to perform?" "Install" "Setup" "Update"
-choice=$?
+# Main menu loop
+while true; do
+    show_menu "What do you want to perform?" "Install" "Setup" "Update"
+    choice=$?
 
-# Handle Back/Exit
-if [ $choice -eq 255 ]; then  # Back
-    exit 0
-fi
+    # Handle Back/Exit
+    if [ $choice -eq 255 ]; then  # Back or Exit from main menu
+        clear
+        exit 0
+    fi
 
-case $choice in
-    0)  # Install
-        handle_install_menu
-        ;;
-    1)  # Setup
-        handle_setup_menu
-        ;;
-    2)  # Update
-        handle_update_menu
-        ;;
-esac
+    case $choice in
+        0)  # Install
+            handle_install_menu
+            ;;
+        1)  # Setup
+            handle_setup_menu
+            ;;
+        2)  # Update
+            handle_update_menu
+            ;;
+    esac
+done

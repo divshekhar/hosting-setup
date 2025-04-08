@@ -12,7 +12,17 @@ clear_and_print_header() {
 
 # Interactive menu selection function
 select_option() {
-    local options=("$@" "Back" "Exit")
+    local options=("$@")
+    local is_main_menu=0
+    
+    # Check if this is the main menu by looking at the breadcrumb
+    if [ "$MENU_BREADCRUMB" = "Deploid" ]; then
+        is_main_menu=1
+        options+=("Exit")
+    else
+        options+=("Back" "Exit")
+    fi
+    
     local selected=0
     local ENTER=$'\n'
     local key
@@ -62,7 +72,7 @@ select_option() {
             "")  # Enter key
                 echo -en "\033[${#options[@]}B"
                 tput cnorm
-                # Check if Back or Exit was selected
+                # Check if Exit was selected
                 if [ "${options[$selected]}" = "Exit" ]; then
                     clear
                     exit 0
