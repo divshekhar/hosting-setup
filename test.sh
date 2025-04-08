@@ -3,6 +3,9 @@
 # Source colors for consistent output
 source "$(dirname "${BASH_SOURCE[0]}")/core/colors.sh"
 
+# Container name constant
+CONTAINER_NAME="deploid-test"
+
 # Function to check if Docker is installed
 check_docker() {
     if ! command -v docker &> /dev/null; then
@@ -24,17 +27,32 @@ build_image() {
 
 # Function to cleanup existing containers
 cleanup_containers() {
-    local running_containers=$(docker ps -q --filter ancestor=deploid)
-    local stopped_containers=$(docker ps -aq --filter ancestor=deploid --filter status=exited)
+    print_message "Cleaning up existing containers..."
     
-    if [ -n "$running_containers" ]; then
-        print_message "Stopping running containers..."
-        docker stop $running_containers
+    # Find containers by name (both running and stopped)
+    local containers=$(docker ps -a --filter "name=$CONTAINER_NAME" --format "{{.ID}}")
+    
+    if [ -n "$containers" ]; then
+        # Stop running containers
+        print_instruction "Stopping containers..."
+        echo "$containers" | xargs docker stop
+        
+        # Remove containers
+        print_instruction "Removing containers..."
+        echo "$containers" | xargs docker rm -f
+        
+        print_message "Cleanup completed!"
+    else
+        print_instruction "No existing containers found"
     fi
+
+    # Additional cleanup for any containers using the deploid image
+    local image_containers=$(docker ps -a --filter "ancestor=deploid" --format "{{.ID}}")
     
-    if [ -n "$stopped_containers" ]; then
-        print_message "Removing stopped containers..."
-        docker rm $stopped_containers
+    if [ -n "$image_containers" ]; then
+        print_instruction "Cleaning up additional containers using deploid image..."
+        echo "$image_containers" | xargs docker stop
+        echo "$image_containers" | xargs docker rm -f
     fi
 }
 
@@ -45,7 +63,7 @@ run_container() {
     print_instruction "Initial command: ./deploid.sh"
     print_instruction "Use 'exit' to leave the container"
     echo
-    docker run -it --privileged deploid /bin/bash -c "./deploid.sh; bash"
+    docker run -it --privileged --name "$CONTAINER_NAME" deploid /bin/bash -c "./deploid.sh; bash"
 }
 
 # Main execution
