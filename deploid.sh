@@ -12,7 +12,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/core/colors.sh"
 source "$SCRIPT_DIR/core/utils.sh"
 source "$SCRIPT_DIR/core/menu.sh"
-source "$SCRIPT_DIR/install/git.sh"
+source "$SCRIPT_DIR/setup/git.sh"
+source "$SCRIPT_DIR/setup/ssh.sh"
 
 # Initialize breadcrumb with "Deploid"
 MENU_BREADCRUMB="Deploid"
@@ -20,8 +21,9 @@ MENU_BREADCRUMB="Deploid"
 # Function to handle installation menu
 handle_install_menu() {
     update_breadcrumb "Install"
+    local MAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-    show_menu "What do you want to install?" "Sudo" "Git" "Docker"
+    show_menu "What do you want to install?" "Sudo" "Git" "Docker" "OpenSSH"
     install_choice=$?
 
     if [ $install_choice -eq 255 ]; then  # Back
@@ -33,7 +35,7 @@ handle_install_menu() {
         0)  # Sudo
             update_breadcrumb "Sudo"
             show_menu "Installing Sudo" "Continue"
-            source "$SCRIPT_DIR/install/sudo.sh"
+            source "$MAIN_DIR/install/sudo.sh"
             install_sudo
             sudo_version=$(sudo -V | head -n1)
             print_message "Yayy! Sudo is installed! ($sudo_version)"
@@ -48,6 +50,7 @@ handle_install_menu() {
         1)  # Git
             update_breadcrumb "Git"
             show_menu "Installing Git" "Continue"
+            source "$MAIN_DIR/install/git.sh"
             install_git
             git_version=$(git --version 2>/dev/null || echo "unknown")
             print_message "Yayy! Git is installed! ($git_version)"
@@ -62,7 +65,7 @@ handle_install_menu() {
         2)  # Docker
             update_breadcrumb "Docker"
             show_menu "Installing Docker" "Continue"
-            source "$SCRIPT_DIR/install/docker.sh"
+            source "$MAIN_DIR/install/docker.sh"
             install_docker
             docker_version=$(docker --version 2>/dev/null || echo "unknown")
             print_message "Yayy! Docker is installed! ($docker_version)"
@@ -75,53 +78,80 @@ handle_install_menu() {
             read -p "Press Enter to exit..."
             exit 0
             ;;
+        3)  # OpenSSH
+            update_breadcrumb "OpenSSH"
+            show_menu "Installing OpenSSH" "Continue"
+            source "$MAIN_DIR/install/openssh.sh"
+            install_openssh
+            ssh_version=$(ssh -V 2>&1)
+            print_message "Yayy! OpenSSH is installed! ($ssh_version)"
+            echo
+            print_instruction "Next steps:"
+            print_instruction "1. Run ./deploid.sh and choose 'Setup' > 'SSH' to configure SSH keys"
+            print_instruction "2. Or install other tools by running ./deploid.sh again"
+            echo
+            read -p "Press Enter to exit..."
+            exit 0
+            ;;
+    esac
+}
+
+# Function to handle SSH setup menu
+handle_ssh_setup_menu() {
+    # Ensure we're using the correct SCRIPT_DIR
+    local MAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    show_menu "Setup SSH for:" "GitHub"
+    ssh_choice=$?
+
+    if [ $ssh_choice -eq 255 ]; then  # Back
+        return
+    fi
+
+    case $ssh_choice in
+        0)  # GitHub
+            update_breadcrumb "GitHub"
+            show_menu "GitHub SSH Setup" "Continue"
+            
+            # Source the file with correct path
+            source "$MAIN_DIR/setup/ssh.sh"
+            
+            # Now try to run the function
+            setup_github_ssh
+            
+            print_message "GitHub SSH setup completed!"
+            echo
+            read -p "Press Enter to continue..."
+            remove_last_breadcrumb
+            exit 0
+            ;;
     esac
 }
 
 # Function to handle setup menu
 handle_setup_menu() {
     update_breadcrumb "Setup"
-    local return_to_main=false
 
     while true; do
-        show_menu "What kind of setup do you want?" "Git + SSH" "Docker" "Node"
+        show_menu "What kind of setup do you want?" "SSH"
         setup_choice=$?
 
         if [ $setup_choice -eq 255 ]; then  # Back
             remove_last_breadcrumb
-            return_to_main=true
-            break
+            return
         fi
 
         case $setup_choice in
-            0)  # Git + SSH
-                update_breadcrumb "Git + SSH"
-                show_menu "Git + SSH Setup" "Continue"
-                source "$SCRIPT_DIR/core/git.sh"
-                setup_ssh_key
-                setup_repository
+            0)  # SSH
+                update_breadcrumb "SSH"
+                handle_ssh_setup_menu
                 remove_last_breadcrumb
                 ;;
-            1)  # Docker
-                update_breadcrumb "Docker"
-                show_menu "Docker Setup" "Continue"
-                source "$SCRIPT_DIR/deployments/docker/deploy.sh"
-                deploy_docker "$(pwd)"
-                remove_last_breadcrumb
-                ;;
-            2)  # Node
-                update_breadcrumb "Node"
-                show_menu "Node Setup" "Continue"
-                source "$SCRIPT_DIR/deployments/node/deploy.sh"
-                deploy_node "$(pwd)"
-                remove_last_breadcrumb
+            *)  # Invalid choice
+                print_error "Invalid choice"
                 ;;
         esac
     done
-
-    if [ "$return_to_main" = true ]; then
-        remove_last_breadcrumb
-    fi
 }
 
 # Function to handle update menu

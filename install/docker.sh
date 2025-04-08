@@ -1,7 +1,7 @@
 #!/bin/bash
 
 source "$(dirname "${BASH_SOURCE[0]}")/../core/colors.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/../core/dependencies.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../utils/dependencies.sh"
 
 install_docker() {
     # First ensure all dependencies are met
